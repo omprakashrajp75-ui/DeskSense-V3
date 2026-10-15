@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeskSense</title>
+
+  <!-- Inter from Google Fonts. The board is often offline, so this is
+       purely additive: --font-body falls back to system-ui and the page
+       is unchanged apart from the typeface if the request fails. -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Two large soft colour glows behind all content. -->
+  <div class="glow glow-a"></div>
+  <div class="glow glow-b"></div>
+
+  <!-- Auth gate. Covers everything until a session token is in hand; app.js
+       decides between the setup and login forms from /api/auth/status. The
+       dashboard shell below stays hidden (and makes no data calls) until then. -->
+  <div class="auth-gate" id="authGate" hidden>
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="mark"></span>
+        <h1>DeskSense</h1>
+      </div>
+
+      <form class="auth-form" id="setupForm" hidden>
+        <h2>Set a password</h2>
+        <p class="hint">
+          This dashboard is reachable by anything on your Wi-Fi, so it needs a
+          password before it will show your camera feed or your stats.
+        </p>
+        <label class="auth-label" for="setupPassword">New password</label>
+        <input class="auth-input" id="setupPassword" type="password"
+               autocomplete="new-password" minlength="6" required />
+        <label class="auth-label" for="setupConfirm">Confirm password</label>
+        <input class="auth-input" id="setupConfirm" type="password"
+               autocomplete="new-password" minlength="6" required />
+        <button class="btn-primary auth-submit" id="setupSubmit" type="submit">Set password</button>
+        <div class="auth-error" id="setupError" hidden></div>
+      </form>
+
+      <form class="auth-form" id="loginForm" hidden>
+        <h2>Sign in</h2>
+        <label class="auth-label" for="loginPassword">Password</label>
+        <input class="auth-input" id="loginPassword" type="password"
+               autocomplete="current-password" required />
+        <button class="btn-primary auth-submit" id="loginSubmit" type="submit">Sign in</button>
+        <div class="auth-error" id="loginError" hidden></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-shell" id="appShell" hidden>
+  <div class="wrap">
+
+    <!-- Tab bar: segmented pill control on desktop, fixed bottom icon bar
+         on phones. data-tab values are the JS contract - don't rename. -->
+    <nav class="app-nav">
+      <button class="nav-item active" data-tab="home" type="button">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="nav-item" data-tab="insights" type="button">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-6"/></svg>
+        <span>Insights</span>
+      </button>
+      <button class="nav-item" data-tab="trends" type="button">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5.5-6 4 3.5L21 6"/><path d="M21 6h-5"/></svg>
+        <span>Trends</span>
+      </button>
+      <button class="nav-item" data-tab="focus" type="button">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Focus</span>
+      </button>
+      <button class="nav-item" data-tab="challenges" type="button">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M12 14v4"/><path d="M8 21h8"/></svg>
+        <span>Challenges</span>
+      </button>
+      <button class="nav-item" data-tab="settings" type="button">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <!-- Header: shared by all six tabs (it sits above the panels), so the
+         greeting + state pill + logout are present on every one. -->
+    <div class="topbar">
+      <h1 class="greeting" id="greeting">
+        Hello
+        <span class="greeting-sub">DeskSense · UNO Q · edge inference</span>
+      </h1>
+      <div class="topbar-right">
+        <div class="status-pill" id="statusPill">
+          <span class="dot"></span>
+          <span id="statusText">connecting…</span>
+        </div>
+        <button class="icon-btn" id="logoutIcon" type="button" title="Sign out" aria-label="Sign out">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===================== HOME ===================== -->
+    <section class="tab-panel" data-tab-panel="home">
+      <div class="bento">
+
+        <!-- Hero: today's focus time as the big number, with the day split
+             underneath. Both are filled from the same totals that feed the
+             Insights stat cards - see renderStatCards in app.js. -->
+        <div class="card span-7">
+          <div class="card-label">Focus time today</div>
+          <div class="big-number" id="heroFocusBig">--</div>
+          <div class="stacked-bar" id="heroBar" style="margin-top:18px;"></div>
+          <div class="legend">
+            <span><span class="sw" style="background:var(--focused)"></span>Focused</span>
+            <span><span class="sw" style="background:var(--distracted)"></span>Distracted</span>
+            <span><span class="sw" style="background:var(--phone)"></span>Phone</span>
+            <span><span class="sw" style="background:var(--absent)"></span>Absent</span>
+          </div>
+        </div>
+
+        <!-- Current state -->
+        <div class="card span-5">
+          <h2>Current state</h2>
+          <div class="vital-card">
+            <div class="gauge" id="engagementGauge" style="--ring-color: var(--distracted);"><span id="engagementNum">--</span></div>
+            <div class="vital-meta">
+              <div class="label">Work engagement</div>
+              <div class="value-label" id="engagementLabel">—</div>
+              <div class="hint" id="engagementHint">Waiting for the first reading…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live camera -->
+        <div class="card span-7">
+          <h2>Live detection</h2>
+          <div class="feed-box">
+            <img id="feedImg" alt="Live detection feed" style="display:none;" />
+            <div class="placeholder" id="feedPlaceholder" style="display:flex;">Waiting for first frame…</div>
+          </div>
+          <div class="feed-tags">
+            <span class="tag" id="tagPresence">no person</span>
+            <span class="tag" id="tagGaze">gaze: —</span>
+            <span class="tag" id="tagPhone">phone: clear</span>
+          </div>
+          <!-- Live raw metrics - these exist so posture thresholds can be tuned
+               against real observed numbers instead of guesswork. Watch these
+               while deliberately slouching to see which signal actually moves. -->
+          <details class="debug-panel">
+            <summary>Detection detail</summary>
+            <div id="debugReadout" class="debug-readout">—</div>
+          </details>
+        </div>
+
+        <!-- Posture score -->
+        <div class="card span-5">
+          <h2>Posture</h2>
+          <div class="vital-card">
+            <div class="gauge" id="postureGauge" style="--ring-color: var(--focused);"><span id="postureNum">--</span></div>
+            <div class="vital-meta">
+              <div class="label">Posture (relative)</div>
+              <div class="value-label" id="postureLabel">—</div>
+              <div class="hint" id="postureHint">Compared to your calibrated baseline, not an absolute measure.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>Connected devices</h2>
+          <div class="device-list">
+            <div class="device-row">
+              <span class="device-dot" id="dotLamp"></span>
+              <span class="device-name">Desk lamp</span>
+              <span class="device-state" id="stateLamp">—</span>
+              <span class="device-why">follows your presence</span>
+            </div>
+            <div class="device-row">
+              <span class="device-dot" id="dotFan"></span>
+              <span class="device-name">Fan</span>
+              <span class="device-state" id="stateFan">—</span>
+              <span class="device-why">follows your presence</span>
+            </div>
+            <div class="device-row">
+              <span class="device-dot" id="dotAlert"></span>
+              <span class="device-name">Posture alert</span>
+              <span class="device-state" id="stateAlert">—</span>
+              <span class="device-why">fires on sustained slouching</span>
+            </div>
+          </div>
+          <div class="hint" id="physicalHint"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== INSIGHTS ===================== -->
+    <section class="tab-panel" data-tab-panel="insights" hidden>
+      <div class="bento">
+
+        <!-- Today's summary, stat-card style: durations are more honest than a
+             precise-looking score for signals we're deriving from coarse proxies. -->
+        <div class="card span-3">
+          <div class="stat-label">Focused time</div>
+          <div class="stat-value" id="statFocused">--</div>
+        </div>
+        <div class="card span-3">
+          <div class="stat-label">Phone / distraction</div>
+          <div class="stat-value warn" id="statDistracted">--</div>
+        </div>
+        <div class="card span-3">
+          <div class="stat-label">Poor posture</div>
+          <div class="stat-value warn" id="statPosture">--</div>
+        </div>
+        <div class="card span-3">
+          <div class="stat-label">Away from desk</div>
+          <div class="stat-value" id="statAway">--</div>
+        </div>
+
+        <div class="card span-12">
+          <h2>Today so far</h2>
+          <div id="timelineWrap">
+            <div class="timeline-bar" id="timelineBar"></div>
+            <div class="legend">
+              <span><span class="sw" style="background:var(--focused)"></span>Engaged</span>
+              <span><span class="sw" style="background:var(--distracted)"></span>Distracted</span>
+              <span><span class="sw" style="background:var(--absent)"></span>Away</span>
+            </div>
+          </div>
+          <div id="todayEmpty" class="empty-state" style="display:none;">No hourly data recorded yet today.</div>
+
+          <hr class="today-divider" />
+          <div class="breakdown-rows">
+            <div class="breakdown-row">
+              <span class="breakdown-label">Engaged</span>
+              <span class="breakdown-value" id="bdEngaged">--</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Distracted</span>
+              <span class="breakdown-value" id="bdDistracted">--</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Away from desk</span>
+              <span class="breakdown-value" id="bdAway">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>Averages</h2>
+          <div class="today-tiles">
+            <div class="today-tile">
+              <div class="today-tile-label">Avg posture</div>
+              <div class="today-tile-value" id="todayAvgPosture">--</div>
+            </div>
+            <div class="today-tile">
+              <div class="today-tile-label">Avg engagement</div>
+              <div class="today-tile-value" id="todayAvgEngagement">--</div>
+            </div>
+            <div class="today-tile">
+              <div class="today-tile-label">Session</div>
+              <div class="today-tile-value" id="todaySession">--</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>Daily summary · on-device LLM</h2>
+          <p class="hint" style="margin-bottom:14px;">
+            Generates a short review of today from your on-device model. This runs entirely
+            locally and can take up to a couple of minutes on this hardware — that's expected.
+          </p>
+          <button id="summaryBtn" class="btn-primary">Generate my daily summary</button>
+          <div id="summaryResult" class="summary-result" style="display:none;"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== TRENDS ===================== -->
+    <section class="tab-panel" data-tab-panel="trends" hidden>
+      <div class="bento">
+
+        <div class="card span-12">
+          <h2>Daily average (last 7 recorded days)</h2>
+          <!-- Range pills are presentation only for now: they toggle their own
+               active state and do not refetch or re-window any data yet. -->
+          <div class="range-pills" id="trendsRange">
+            <button class="range-pill active" data-range="day" type="button">Day</button>
+            <button class="range-pill" data-range="week" type="button">Week</button>
+            <button class="range-pill" data-range="month" type="button">Month</button>
+          </div>
+          <p class="hint" id="trendsCoverage" style="margin-top:0;">--</p>
+          <div id="trendsDailyChart"></div>
+          <div id="trendsDailyEmpty" class="empty-state" style="display:none;">Not enough recorded days yet.</div>
+        </div>
+
+        <div class="card span-12">
+          <h2>Rollup trend (last 100 recorded periods)</h2>
+          <div id="trendChart"></div>
+          <div id="trendEmpty" class="empty-state" style="display:none;">
+            Nothing recorded yet — the first summary appears once a rollup period completes.
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>Session history</h2>
+          <button id="sessionHistoryBtn" class="btn-primary">Session history</button>
+          <div id="sessionHistoryPanel" style="margin-top:16px; display:none;">
+            <div id="sessionHistoryChart"></div>
+            <div id="sessionHistoryEmpty" class="empty-state" style="display:none;">No completed sessions recorded yet</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== FOCUS (pomodoro) =====================
+         Display + control only. Python owns the state machine; everything
+         here is painted from the "pomodoro" socket push (once a second) and
+         every button is a POST that returns the new state. -->
+    <section class="tab-panel" data-tab-panel="focus" hidden>
+      <div class="bento">
+
+        <div class="card span-7">
+          <div class="pomo-ring-wrap">
+            <!-- Ring: a conic-gradient sweep driven by --pomo-pct, same
+                 technique as the posture/engagement gauges. -->
+            <div class="pomo-ring" id="pomoRing" style="--pomo-pct: 0;">
+              <div class="pomo-ring-inner">
+                <div class="pomo-time" id="pomoTime">--:--</div>
+                <div class="pomo-sub" id="pomoSub">not started</div>
+              </div>
+            </div>
+            <div class="pomo-side">
+              <span class="status-pill" id="pomoPhasePill">
+                <span class="dot"></span>
+                <span id="pomoPhaseText">Idle</span>
+              </span>
+              <div class="pomo-controls">
+                <button class="btn-primary" id="pomoStartBtn" type="button">Start</button>
+                <button class="btn-ghost" id="pomoSkipBtn" type="button">Skip</button>
+                <button class="btn-ghost" id="pomoResetBtn" type="button">Reset</button>
+              </div>
+              <p class="hint" id="pomoCycleHint">Long break after every 4 sessions.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card span-5">
+          <h2>Today</h2>
+          <div class="card-label">Completed sessions</div>
+          <div class="big-number" id="pomoCompleted">0</div>
+          <hr class="today-divider" />
+          <div class="card-label">Last session focus quality</div>
+          <div class="stat-value" id="pomoQuality">--</div>
+          <p class="hint" style="margin-top:8px;">
+            Share of the last completed focus session the engagement tracker
+            scored as focused.
+          </p>
+        </div>
+
+        <div class="card span-12">
+          <h2>Timer settings</h2>
+          <form class="auth-form settings-form" id="pomoSettingsForm">
+            <label class="auth-label" for="pomoFocusMin">Focus minutes</label>
+            <input class="auth-input" id="pomoFocusMin" type="number" min="1" max="180" required />
+            <label class="auth-label" for="pomoShortMin">Short break minutes</label>
+            <input class="auth-input" id="pomoShortMin" type="number" min="1" max="60" required />
+            <label class="auth-label" for="pomoLongMin">Long break minutes</label>
+            <input class="auth-input" id="pomoLongMin" type="number" min="1" max="120" required />
+            <label class="auth-label" for="pomoSessionsBeforeLong">Sessions before a long break</label>
+            <input class="auth-input" id="pomoSessionsBeforeLong" type="number" min="1" max="12" required />
+            <label class="pomo-check">
+              <input type="checkbox" id="pomoAutoStart" />
+              <span>Auto-start the next phase</span>
+            </label>
+            <button class="btn-primary auth-submit" id="pomoSettingsSubmit" type="submit">Save settings</button>
+            <div class="auth-error" id="pomoSettingsError" hidden></div>
+            <div class="auth-ok" id="pomoSettingsOk" hidden>Settings saved.</div>
+          </form>
+          <p class="hint" style="margin-top:12px;">
+            A duration change applies to the next phase, not the one currently
+            counting down.
+          </p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== CHALLENGES ===================== -->
+    <section class="tab-panel" data-tab-panel="challenges" hidden>
+      <div class="bento">
+        <div class="card span-12">
+          <h2>Challenges</h2>
+          <div class="coming-next">Coming next</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== SETTINGS ===================== -->
+    <section class="tab-panel" data-tab-panel="settings" hidden>
+      <div class="bento">
+
+        <div class="card span-6">
+          <h2>Theme</h2>
+          <div class="theme-toggle" id="themeToggle">
+            <button class="theme-option active" data-theme-choice="dark" type="button">Dark</button>
+            <button class="theme-option" data-theme-choice="light" type="button">Light glass</button>
+          </div>
+          <p class="hint" style="margin-top:12px;">Remembered in this browser.</p>
+        </div>
+
+        <div class="card span-6">
+          <h2>Session</h2>
+          <p class="hint" style="margin-bottom:14px;">
+            Signing out clears the token stored in this browser. Sessions expire
+            on their own after 7 days.
+          </p>
+          <button id="logoutBtn" class="btn-ghost">Sign out</button>
+        </div>
+
+        <div class="card span-12">
+          <h2>Change password</h2>
+          <form class="auth-form settings-form" id="changeForm">
+            <label class="auth-label" for="currentPassword">Current password</label>
+            <input class="auth-input" id="currentPassword" type="password"
+                   autocomplete="current-password" required />
+            <label class="auth-label" for="newPassword">New password</label>
+            <input class="auth-input" id="newPassword" type="password"
+                   autocomplete="new-password" minlength="6" required />
+            <label class="auth-label" for="newConfirm">Confirm new password</label>
+            <input class="auth-input" id="newConfirm" type="password"
+                   autocomplete="new-password" minlength="6" required />
+            <button class="btn-primary auth-submit" id="changeSubmit" type="submit">Change password</button>
+            <div class="auth-error" id="changeError" hidden></div>
+            <div class="auth-ok" id="changeOk" hidden>Password changed.</div>
+          </form>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+  </div>
+
+  <!--
+    Socket.IO client - the WebUI Brick's push messages (ui.send_message) ride
+    over Socket.IO. If App Lab bundles a client lib under assets/libs/ (a
+    `libs` folder was visible in the scaffolded project), point this at that
+    file instead - it keeps the dashboard fully working with no internet
+    access on the board's LAN. Falling back to a CDN version for now:
+  -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- <script src="libs/socket.io.min.js"></script> -->
+  <script src="app.js"></script>
+</body>
+</html>

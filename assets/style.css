@@ -1,0 +1,1067 @@
+/* ---------------------------------------------------------------
+   DeskSense - Dashboard
+   Modern dark "bento card" design: a near-black page with two large
+   soft colour glows behind it, and every piece of content in its own
+   translucent blurred card on a 12-column bento grid.
+
+   Two things constrain this file:
+     - The chart SVGs are generated in app.js and reference CSS
+       variables (--teal, --amber, --coral, --line, --text-faint,
+       --font-mono) rather than literals, so redefining those tokens
+       below is what restyles the charts. Keep those names.
+     - .gauge's conic-gradient reads --pct / --ring-color, both set
+       from JS. Keep that mechanic intact.
+------------------------------------------------------------------ */
+
+:root {
+  /* ---- Surface ---- */
+  --bg: #0B0B12;
+  --glow-a: #8B5CF6;          /* violet, top-left */
+  --glow-b: #F472B6;          /* pink, bottom-right */
+  --glow-opacity: 0.20;
+
+  --card: rgba(255, 255, 255, 0.05);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-radius: 20px;
+  --card-padding: 20px;
+  --gap: 16px;
+  --card-blur: blur(16px);
+
+  /* ---- Text ---- */
+  --text: #F5F5F7;
+  --text-muted: #9A9AA8;
+  --text-faint: #9A9AA8;      /* chart tick labels (JS) */
+
+  /* ---- State colours (used everywhere, one source of truth) ---- */
+  --focused: #7CF29A;
+  --distracted: #F5E663;
+  --posture-bad: #FF8A65;
+  --absent: #B79CFF;
+  --phone: #60A5FA;
+
+  /* Legacy aliases the JS-built SVG + setGauge/scoreColor still ask for.
+     Mapped onto the state palette so charts inherit it automatically:
+     teal = good/focused, amber = warning/distracted, coral = bad. */
+  --teal: var(--focused);
+  --amber: var(--distracted);
+  --coral: var(--posture-bad);
+  --violet: var(--absent);
+  --line: rgba(255, 255, 255, 0.08);
+
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --speed: 180ms;
+}
+
+/* ---- Light glass theme (Settings toggle) ----
+   Same geometry, lighter surface: pastel glows, white cards at 60%
+   opacity, dark text. State colours darken slightly so they stay
+   legible on white. */
+[data-theme="light"] {
+  --bg: #F2F2F5;
+  --glow-a: #A78BFA;
+  --glow-b: #F9A8D4;
+  --glow-opacity: 0.28;
+
+  --card: rgba(255, 255, 255, 0.60);
+  --card-border: rgba(0, 0, 0, 0.07);
+
+  --text: #1A1A22;
+  --text-muted: #5C5C6B;
+  --text-faint: #5C5C6B;
+
+  --focused: #0E9F6E;
+  --distracted: #B59000;
+  --posture-bad: #E05E35;
+  --absent: #7C5CD1;
+  --phone: #2563EB;
+
+  --line: rgba(0, 0, 0, 0.10);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  /* Belt and braces against sideways drift on a 360px phone. */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--speed) ease, color var(--speed) ease;
+}
+
+/* ---- Background glows ----
+   Fixed, non-interactive, behind everything. Two large blurred radial
+   blobs: violet top-left, pink bottom-right. */
+.glow {
+  position: fixed;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: var(--glow-opacity);
+  transition: opacity var(--speed) ease;
+}
+
+.glow-a {
+  top: -220px;
+  left: -180px;
+  width: 620px;
+  height: 620px;
+  background: var(--glow-a);
+}
+
+.glow-b {
+  right: -200px;
+  bottom: -260px;
+  width: 680px;
+  height: 680px;
+  background: var(--glow-b);
+}
+
+/* ---- Shell ---- */
+.app-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+.app-shell[hidden] { display: none; }
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 20px 72px;
+  min-width: 0;
+}
+
+/* ---- Tab bar: pill-shaped segmented control ---- */
+.app-nav {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  margin: 0 auto 20px;
+  width: fit-content;
+  max-width: 100%;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.app-nav::-webkit-scrollbar { display: none; }
+
+.nav-item {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 9px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--speed) ease, color var(--speed) ease;
+}
+
+.nav-item:hover { color: var(--text); }
+
+.nav-item.active {
+  background: #FFFFFF;
+  color: #0B0B12;
+}
+
+.nav-item .nav-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+}
+
+/* Icons are for the phone bottom bar; the desktop pill bar is text. */
+.nav-item .nav-icon { display: none; }
+
+.tab-panel[hidden] { display: none; }
+
+/* ---- Header (on every tab) ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: var(--gap);
+}
+
+.greeting {
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+
+.greeting .greeting-sub {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- State pill / chip ----
+   Chips fill with their colour at 15% and use it at full strength for
+   the text, so every state reads the same way across all six tabs. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(154, 154, 168, 0.15);
+  transition: background var(--speed) ease, color var(--speed) ease;
+}
+
+.status-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+/* Each chip declares an rgba tint first and the color-mix equivalent
+   second: engines without color-mix keep the literal, newer ones use the
+   mix so the tint tracks the theme's state colours. */
+.status-pill.live {
+  color: var(--focused);
+  background: rgba(124, 242, 154, 0.15);
+  background: color-mix(in srgb, var(--focused) 15%, transparent);
+}
+
+.status-pill.away {
+  color: var(--absent);
+  background: rgba(183, 156, 255, 0.15);
+  background: color-mix(in srgb, var(--absent) 15%, transparent);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-muted);
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  cursor: pointer;
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
+  transition: color var(--speed) ease, background var(--speed) ease;
+}
+
+.icon-btn:hover { color: var(--text); }
+
+.icon-btn svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+}
+
+/* ---- Bento grid ---- */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: var(--gap);
+}
+
+.card {
+  grid-column: span 12;
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: var(--card-padding);
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
+  transition: background var(--speed) ease, border-color var(--speed) ease;
+}
+
+/* Column spans - desktop only; everything collapses to one column on
+   phones via the media query at the bottom. */
+.span-3 { grid-column: span 3; }
+.span-4 { grid-column: span 4; }
+.span-5 { grid-column: span 5; }
+.span-6 { grid-column: span 6; }
+.span-7 { grid-column: span 7; }
+.span-8 { grid-column: span 8; }
+
+.card h2 {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.card-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* ---- Big number: 56px / weight 300, units muted at half size ---- */
+.big-number {
+  font-size: 56px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 2px 0 0;
+}
+
+.big-number .unit {
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--text-muted);
+  margin: 0 2px 0 1px;
+}
+
+/* ---- Horizontal stacked bar (hero + Insights timeline) ---- */
+.stacked-bar,
+.timeline-bar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.stacked-bar .seg,
+.timeline-bar .seg {
+  height: 100%;
+  transition: width var(--speed) ease;
+}
+
+/* Segment colours - class names come from app.js, don't rename. */
+.seg.engaged,
+.seg.focused { background: var(--focused); }
+.seg.distracted { background: var(--distracted); }
+.seg.phone { background: var(--phone); }
+.seg.away,
+.seg.absent { background: var(--absent); }
+
+/* ---- Legend ---- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend .sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+/* ---- Gauge ring (posture / engagement) ----
+   --pct and --ring-color are set from JS; the inner disc has to match
+   the card surface, and because the card is translucent the disc uses
+   the page background so the ring reads as a ring. */
+.gauge {
+  --pct: 0;
+  --ring-color: var(--focused);
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  flex: none;
+  position: relative;
+  background: conic-gradient(var(--ring-color) calc(var(--pct) * 1%), var(--line) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--speed) ease;
+}
+
+.gauge::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.gauge span {
+  position: relative;
+  font-size: 24px;
+  font-weight: 300;
+}
+
+.vital-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.vital-meta { min-width: 0; }
+
+.vital-meta .label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.vital-meta .value-label {
+  font-size: 16px;
+  font-weight: 500;
+  text-transform: capitalize;
+  margin-bottom: 3px;
+}
+
+.vital-meta .hint,
+.hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ---- Live feed ---- */
+.feed-box {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  background: rgba(0, 0, 0, 0.35);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feed-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.feed-box .placeholder {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  align-items: center;
+  justify-content: center;
+}
+
+.feed-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+/* .tag gets .on toggled from JS to mean "nominal/clear" */
+.tag {
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: rgba(154, 154, 168, 0.15);
+}
+
+.tag.on {
+  color: var(--focused);
+  background: rgba(124, 242, 154, 0.15);
+  background: color-mix(in srgb, var(--focused) 15%, transparent);
+}
+
+/* ---- Stat tiles (Insights) ---- */
+.stat-label {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+}
+
+.stat-value.warn { color: var(--distracted); }
+
+/* ---- Breakdown rows ---- */
+.breakdown-rows { display: grid; gap: 2px; }
+
+.breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.breakdown-row:last-child { border-bottom: none; }
+
+.breakdown-label { font-size: 13px; color: var(--text-muted); }
+
+.breakdown-value {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* Injected via innerHTML in renderTodayBreakdown */
+.breakdown-pct {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.today-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+
+.today-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+}
+
+.today-tile-label {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.today-tile-value {
+  font-size: 24px;
+  font-weight: 300;
+}
+
+/* ---- Connected devices ---- */
+.device-list { display: grid; gap: 2px; }
+
+.device-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.device-row:last-child { border-bottom: none; }
+
+.device-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  transition: background var(--speed) ease, box-shadow var(--speed) ease;
+}
+
+.device-dot.on {
+  background: var(--focused);
+  box-shadow: 0 0 10px 1px var(--focused);
+}
+
+.device-name { font-size: 13.5px; }
+
+.device-state {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.device-why {
+  grid-column: 2 / -1;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: -6px;
+}
+
+/* ---- Range pills (Trends, UI only for now) ---- */
+.range-pills {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(154, 154, 168, 0.12);
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+
+.range-pill {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background var(--speed) ease, color var(--speed) ease;
+}
+
+.range-pill.active {
+  background: #FFFFFF;
+  color: #0B0B12;
+}
+
+/* ---- Buttons ---- */
+.btn-primary {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #0B0B12;
+  background: #FFFFFF;
+  border: none;
+  border-radius: 999px;
+  padding: 11px 20px;
+  cursor: pointer;
+  transition: opacity var(--speed) ease, transform var(--speed) ease;
+}
+
+.btn-primary:hover { opacity: 0.88; }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+.btn-ghost {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 11px 20px;
+  cursor: pointer;
+  transition: background var(--speed) ease;
+}
+
+/* ---- Charts (SVG injected by app.js) ---- */
+#trendChart svg,
+#trendsDailyChart svg,
+#sessionHistoryChart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.empty-state {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 20px 0;
+}
+
+.coming-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.summary-result {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+  background: rgba(154, 154, 168, 0.10);
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 14px;
+  white-space: pre-wrap;
+}
+
+/* ---- Detection detail (collapsed raw metrics) ---- */
+.debug-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.debug-panel summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.debug-readout {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  margin-top: 10px;
+}
+
+/* ---- Forms ---- */
+.auth-form h2 {
+  font-size: 17px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.auth-form[hidden] { display: none; }
+
+.auth-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 14px 0 6px;
+}
+
+.auth-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 16px;            /* >=16px stops iOS Safari zooming on focus */
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  transition: border-color var(--speed) ease;
+}
+
+[data-theme="light"] .auth-input { background: rgba(255, 255, 255, 0.75); }
+
+.auth-input:focus {
+  outline: none;
+  border-color: var(--absent);
+}
+
+.auth-submit { margin-top: 18px; }
+
+.auth-error,
+.auth-ok {
+  font-size: 12.5px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-top: 14px;
+}
+
+.auth-error {
+  color: var(--posture-bad);
+  background: rgba(255, 138, 101, 0.15);
+  background: color-mix(in srgb, var(--posture-bad) 15%, transparent);
+}
+
+.auth-ok {
+  color: var(--focused);
+  background: rgba(124, 242, 154, 0.15);
+  background: color-mix(in srgb, var(--focused) 15%, transparent);
+}
+
+.auth-error[hidden],
+.auth-ok[hidden] { display: none; }
+
+.settings-form { max-width: 420px; }
+
+/* ---- Theme toggle ---- */
+.theme-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(154, 154, 168, 0.12);
+  border-radius: 999px;
+}
+
+.theme-option {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background var(--speed) ease, color var(--speed) ease;
+}
+
+.theme-option.active {
+  background: #FFFFFF;
+  color: #0B0B12;
+}
+
+/* ---- Focus tab: pomodoro ----
+   The ring is the same conic-gradient trick as .gauge, at a larger size and
+   with a thicker track. --pomo-pct is set from JS once a second. */
+.pomo-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.pomo-ring {
+  --pomo-pct: 0;
+  --pomo-color: var(--focused);
+  width: 208px;
+  height: 208px;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--pomo-color) calc(var(--pomo-pct) * 1%), var(--line) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--speed) linear;
+}
+
+.pomo-ring-inner {
+  width: 174px;
+  height: 174px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.pomo-time {
+  font-size: 44px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.pomo-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pomo-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.pomo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Phase pill colours: focus green, break violet. Rgba literal first for
+   engines without color-mix, same pattern as the other chips. */
+.status-pill.pomo-focus {
+  color: var(--focused);
+  background: rgba(124, 242, 154, 0.15);
+  background: color-mix(in srgb, var(--focused) 15%, transparent);
+}
+
+.status-pill.pomo-break {
+  color: var(--absent);
+  background: rgba(183, 156, 255, 0.15);
+  background: color-mix(in srgb, var(--absent) 15%, transparent);
+}
+
+.pomo-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 16px;
+  cursor: pointer;
+}
+
+.pomo-check input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--focused);
+  cursor: pointer;
+}
+
+@media (max-width: 420px) {
+  .pomo-ring-wrap { gap: 18px; justify-content: center; }
+  .pomo-ring { width: 180px; height: 180px; }
+  .pomo-ring-inner { width: 150px; height: 150px; }
+  .pomo-time { font-size: 38px; }
+  .pomo-side { align-items: stretch; width: 100%; }
+  .pomo-controls button { flex: 1 1 auto; }
+}
+
+/* ---- Auth gate: one centred glass card over the glows ---- */
+.auth-gate {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-gate[hidden] { display: none; }
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 28px 24px;
+  backdrop-filter: var(--card-blur);
+  -webkit-backdrop-filter: var(--card-blur);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.auth-brand .mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--absent);
+  box-shadow: 0 0 12px 2px var(--absent);
+}
+
+.auth-brand h1 {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------
+   Phone: single column, and the tab bar becomes a fixed bottom icon
+   bar. Nothing is allowed to scroll the page sideways at 360px.
+------------------------------------------------------------------ */
+@media (max-width: 860px) {
+  .wrap { padding: 16px 14px 96px; }
+
+  .card,
+  .span-3, .span-4, .span-5,
+  .span-6, .span-7, .span-8 { grid-column: span 12; }
+
+  .today-tiles { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+  .greeting { font-size: 19px; }
+  .big-number { font-size: 48px; }
+  .big-number .unit { font-size: 24px; }
+
+  /* Fixed bottom icon bar */
+  .app-nav {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    margin: 0;
+    z-index: 20;
+    justify-content: space-between;
+    gap: 0;
+    padding: 6px;
+    overflow-x: visible;
+    background: rgba(11, 11, 18, 0.82);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    border-color: var(--card-border);
+  }
+
+  [data-theme="light"] .app-nav { background: rgba(242, 242, 245, 0.88); }
+
+  .nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+    padding: 7px 2px;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    justify-content: center;
+  }
+
+  .nav-item .nav-icon { display: block; }
+
+  /* Active tab stays a white pill, just a rounded-rect one here. */
+  .nav-item.active { background: #FFFFFF; color: #0B0B12; border-radius: 14px; }
+
+  .feed-box { aspect-ratio: 4 / 3; }
+}
+
+@media (max-width: 420px) {
+  .today-tiles { grid-template-columns: 1fr; gap: 4px; }
+  .today-tile { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .today-tile-label { margin-bottom: 0; }
+  .vital-card { gap: 14px; }
+  .gauge { width: 76px; height: 76px; }
+  .gauge span { font-size: 20px; }
+  .nav-item { font-size: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

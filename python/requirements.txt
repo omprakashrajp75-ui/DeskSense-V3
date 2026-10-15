@@ -1,0 +1,25 @@
+# MediaPipe has been removed entirely - this board's CPU (Cortex-A53,
+# ARMv8.0) lacks ARM instruction extensions (lse/dotprod/fp16/rdm/rcpc) that
+# MediaPipe's prebuilt wheels require; it crashes with SIGILL on import.
+# No hardware-compatible replacement exists in App Lab's Brick catalog.
+# See README for the fallback approach: bbox-proxy posture + OpenCV DNN
+# (standard conv-net ops, not MediaPipe) for gaze.
+numpy>=1.26.0
+
+# QR code generation (easy dashboard access) - SVG output, no Pillow needed
+qrcode>=7.4.2
+
+# NOTE: opencv-python-headless is intentionally NOT listed here. The App Lab
+# base Python image (ghcr.io/arduino/app-bricks/python-apps-base) ships a
+# board-optimized OpenCV build pre-installed system-wide, pinned via a global
+# UV_CONSTRAINT. Listing any opencv-python-headless version here makes uv try
+# to re-resolve it against PyPI, where that exact custom wheel doesn't exist -
+# causing an unsatisfiable-dependency failure. The pre-installed build
+# already includes the cv2.dnn module we need for the face detector.
+
+# Phone/person detection and the web dashboard both run via built-in
+# App Lab Bricks (arduino.app_bricks.object_detection, arduino.app_bricks.web_ui) -
+# App Lab installs their dependencies itself when the Bricks are added.
+
+# Storage
+# sqlite3 is part of the Python standard library, nothing to install
