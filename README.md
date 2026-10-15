@@ -167,17 +167,6 @@ with SIGILL. The fallback to `cv2.dnn` was then blocked by App Lab's pinned Open
 Bounding-box posture geometry and Haar-cascade gaze are the result of that constraint rather
 than a first preference, and they run comfortably in real time on the CPU.
 
-**Never list `opencv-python-headless` in `requirements.txt`.** App Lab pins a board-optimised
-build through a global `UV_CONSTRAINT` that does not exist on PyPI, so declaring it yourself
-produces an unsatisfiable resolution.
-
-**Gaze degrades under backlight.** Haar cascades are sensitive to lighting; with a window behind
-you the gaze signal reports face-not-visible. Front-facing light fixes it.
-
-**The dashboard has no authentication.** Anyone on the same network can reach port 7000. Worth
-knowing before running it on public Wi-Fi.
-
-A 5 V DC fan cannot be driven from this setup. Switching a small DC motor through the relay board caused a supply brownout that put the UNO Q into a boot loop. The motor was removed and the demonstration load reduced to a 5 V LED. Driving inductive loads would need a separate supply with proper isolation and flyback protection.
 ---
 
 
